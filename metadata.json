@@ -1,0 +1,6 @@
+{
+  "name": "חידון כיתה",
+  "description": "משחק חידון כיתתי שבו מורים מפרסמים שאלות, תלמידים מצטרפים עם שם ומייל, והמורה מקבל את כל התשובות בזמן אמת.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,185 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything unless explicitly permitted below
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+             email.size() >= 3 &&
+             email.size() <= 120 &&
+             email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
+    }
+
+    function isValidGame(data) {
+      return data.teacherId is string && data.teacherId.size() >= 1 && data.teacherId.size() <= 128 &&
+             data.teacherName is string && data.teacherName.size() >= 1 && data.teacherName.size() <= 80 &&
+             isValidEmail(data.teacherEmail) &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 100 &&
+             data.description is string && data.description.size() <= 300 &&
+             data.status in ['ACTIVE', 'ENDED'] &&
+             data.questionCount is int && data.questionCount >= 0 && data.questionCount <= 50;
+    }
+
+    function isValidQuestion(data) {
+      return data.gameId is string && isValidId(data.gameId) &&
+             data.teacherId is string && data.teacherId.size() >= 1 && data.teacherId.size() <= 128 &&
+             data.prompt is string && data.prompt.size() >= 1 && data.prompt.size() <= 400 &&
+             data.questionType in ['MULTIPLE_CHOICE', 'OPEN_TEXT'] &&
+             data.options is list && data.options.size() <= 6 &&
+             (data.options.size() == 0 || (data.options[0] is string && data.options[0].size() >= 1 && data.options[0].size() <= 120)) &&
+             (data.questionType != 'MULTIPLE_CHOICE' || (data.options.size() >= 2 && data.options[1] is string && data.options[1].size() >= 1 && data.options[1].size() <= 120)) &&
+             (data.questionType != 'OPEN_TEXT' || (data.options.size() == 0 && data.correctOptionIndex == -1)) &&
+             data.correctOptionIndex is int && data.correctOptionIndex >= -1 && data.correctOptionIndex < data.options.size() &&
+             data.orderIndex is int && data.orderIndex >= 0 && data.orderIndex <= 100 &&
+             data.published is bool;
+    }
+
+    function isValidSubmission(data) {
+      return data.gameId is string && isValidId(data.gameId) &&
+             data.teacherId is string && data.teacherId.size() >= 1 && data.teacherId.size() <= 128 &&
+             data.studentUid is string && data.studentUid.size() >= 1 && data.studentUid.size() <= 128 &&
+             data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 80 &&
+             isValidEmail(data.studentEmail) &&
+             data.answers is map && data.answers.size() >= 1 && data.answers.size() <= 50 &&
+             data.score is int && data.score >= 0 && data.score <= 50 &&
+             data.totalScorable is int && data.totalScorable >= 0 && data.totalScorable <= 50 &&
+             data.score <= data.totalScorable &&
+             data.completed is bool;
+    }
+
+    match /games/{gameId} {
+      allow get: if isSignedIn() &&
+                    isValidId(gameId) &&
+                    (existing().teacherId == request.auth.uid || existing().status == 'ACTIVE');
+
+      allow list: if isSignedIn() &&
+                     resource.data.teacherId == request.auth.uid;
+
+      allow create: if isSignedIn() &&
+                       isValidId(gameId) &&
+                       isValidGame(incoming()) &&
+                       incoming().teacherId == request.auth.uid &&
+                       incoming().keys().hasAll(['teacherId', 'teacherName', 'teacherEmail', 'title', 'description', 'status', 'questionCount', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['teacherId', 'teacherName', 'teacherEmail', 'title', 'description', 'status', 'questionCount', 'createdAt', 'updatedAt']) &&
+                       incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time;
+
+      allow update: if isSignedIn() &&
+                       isValidId(gameId) &&
+                       isValidGame(incoming()) &&
+                       existing().teacherId == request.auth.uid &&
+                       incoming().teacherId == existing().teacherId &&
+                       incoming().teacherName == existing().teacherName &&
+                       incoming().teacherEmail == existing().teacherEmail &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'status', 'questionCount', 'updatedAt']);
+
+      allow delete: if isSignedIn() &&
+                       isValidId(gameId) &&
+                       existing().teacherId == request.auth.uid;
+
+      match /questions/{questionId} {
+        allow get: if isSignedIn() &&
+                      isValidId(gameId) &&
+                      isValidId(questionId) &&
+                      (existing().teacherId == request.auth.uid || existing().published == true);
+
+        allow list: if isSignedIn() &&
+                       (resource.data.teacherId == request.auth.uid || resource.data.published == true);
+
+        allow create: if isSignedIn() &&
+                         isValidId(gameId) &&
+                         isValidId(questionId) &&
+                         isValidQuestion(incoming()) &&
+                         incoming().teacherId == request.auth.uid &&
+                         incoming().gameId == gameId &&
+                         incoming().keys().hasAll(['gameId', 'teacherId', 'prompt', 'questionType', 'options', 'correctOptionIndex', 'orderIndex', 'published', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['gameId', 'teacherId', 'prompt', 'questionType', 'options', 'correctOptionIndex', 'orderIndex', 'published', 'createdAt', 'updatedAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         exists(/databases/$(database)/documents/games/$(gameId)) &&
+                         get(/databases/$(database)/documents/games/$(gameId)).data.teacherId == request.auth.uid;
+
+        allow update: if isSignedIn() &&
+                         isValidId(gameId) &&
+                         isValidId(questionId) &&
+                         isValidQuestion(incoming()) &&
+                         existing().teacherId == request.auth.uid &&
+                         incoming().teacherId == existing().teacherId &&
+                         incoming().gameId == existing().gameId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['prompt', 'questionType', 'options', 'correctOptionIndex', 'orderIndex', 'published', 'updatedAt']);
+
+        allow delete: if isSignedIn() &&
+                         isValidId(gameId) &&
+                         isValidId(questionId) &&
+                         existing().teacherId == request.auth.uid;
+      }
+
+      match /submissions/{studentUid} {
+        allow get: if isSignedIn() &&
+                      isValidId(gameId) &&
+                      isValidId(studentUid) &&
+                      (request.auth.uid == studentUid || existing().teacherId == request.auth.uid);
+
+        allow list: if isSignedIn() &&
+                       resource.data.teacherId == request.auth.uid;
+
+        allow create: if isSignedIn() &&
+                         isValidId(gameId) &&
+                         isValidId(studentUid) &&
+                         request.auth.uid == studentUid &&
+                         isValidSubmission(incoming()) &&
+                         incoming().studentUid == request.auth.uid &&
+                         incoming().gameId == gameId &&
+                         incoming().keys().hasAll(['gameId', 'teacherId', 'studentUid', 'studentName', 'studentEmail', 'answers', 'score', 'totalScorable', 'completed', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['gameId', 'teacherId', 'studentUid', 'studentName', 'studentEmail', 'answers', 'score', 'totalScorable', 'completed', 'createdAt', 'updatedAt']) &&
+                         incoming().createdAt is timestamp && incoming().createdAt <= request.time &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         exists(/databases/$(database)/documents/games/$(gameId)) &&
+                         get(/databases/$(database)/documents/games/$(gameId)).data.status == 'ACTIVE' &&
+                         get(/databases/$(database)/documents/games/$(gameId)).data.teacherId == incoming().teacherId;
+
+        allow update: if isSignedIn() &&
+                         isValidId(gameId) &&
+                         isValidId(studentUid) &&
+                         request.auth.uid == studentUid &&
+                         isValidSubmission(incoming()) &&
+                         incoming().studentUid == existing().studentUid &&
+                         incoming().teacherId == existing().teacherId &&
+                         incoming().gameId == existing().gameId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                         get(/databases/$(database)/documents/games/$(gameId)).data.status == 'ACTIVE' &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['studentName', 'studentEmail', 'answers', 'score', 'totalScorable', 'completed', 'updatedAt']);
+
+        allow delete: if isSignedIn() &&
+                         isValidId(gameId) &&
+                         isValidId(studentUid) &&
+                         existing().teacherId == request.auth.uid;
+      }
+    }
+  }
+}

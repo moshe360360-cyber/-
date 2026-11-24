@@ -1,0 +1,209 @@
+{
+  "entities": {
+    "QuizGame": {
+      "title": "QuizGame",
+      "description": "A classroom quiz game created by a teacher with a unique join code.",
+      "type": "object",
+      "properties": {
+        "teacherId": {
+          "type": "string",
+          "description": "UID of the teacher who owns this quiz game."
+        },
+        "teacherName": {
+          "type": "string",
+          "description": "Display name of the teacher."
+        },
+        "teacherEmail": {
+          "type": "string",
+          "description": "Email address of the teacher."
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the quiz game."
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional short description or instructions for students."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ACTIVE", "ENDED"],
+          "description": "Current game status controlling whether students can join and submit."
+        },
+        "questionCount": {
+          "type": "integer",
+          "description": "Number of questions currently in the game."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp()) when the game was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp()) when the game was last updated."
+        }
+      },
+      "required": [
+        "teacherId",
+        "teacherName",
+        "teacherEmail",
+        "title",
+        "description",
+        "status",
+        "questionCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "QuizQuestion": {
+      "title": "QuizQuestion",
+      "description": "An individual multiple-choice or open-ended question belonging to a QuizGame.",
+      "type": "object",
+      "properties": {
+        "gameId": {
+          "type": "string",
+          "description": "Parent game ID / join code."
+        },
+        "teacherId": {
+          "type": "string",
+          "description": "Denormalized teacher UID from the parent game for rule-aligned queries."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Question text shown to students."
+        },
+        "questionType": {
+          "type": "string",
+          "enum": ["MULTIPLE_CHOICE", "OPEN_TEXT"],
+          "description": "Whether the question uses choice options or free-text input."
+        },
+        "options": {
+          "type": "array",
+          "description": "Choice options (2-6 strings for MULTIPLE_CHOICE, empty for OPEN_TEXT)."
+        },
+        "correctOptionIndex": {
+          "type": "integer",
+          "description": "Zero-based index of the correct option, or -1 if ungraded / open text."
+        },
+        "orderIndex": {
+          "type": "integer",
+          "description": "Display order index within the quiz."
+        },
+        "published": {
+          "type": "boolean",
+          "description": "Whether the question is currently visible to students joining the active game."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp()) when the question was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp()) when the question was last updated."
+        }
+      },
+      "required": [
+        "gameId",
+        "teacherId",
+        "prompt",
+        "questionType",
+        "options",
+        "correctOptionIndex",
+        "orderIndex",
+        "published",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "StudentSubmission": {
+      "title": "StudentSubmission",
+      "description": "A student's submitted profile (name and email) and answers delivered directly to the teacher.",
+      "type": "object",
+      "properties": {
+        "gameId": {
+          "type": "string",
+          "description": "Parent game ID / join code."
+        },
+        "teacherId": {
+          "type": "string",
+          "description": "Denormalized teacher UID of the parent game."
+        },
+        "studentUid": {
+          "type": "string",
+          "description": "Authenticated UID of the submitting student."
+        },
+        "studentName": {
+          "type": "string",
+          "description": "Full name entered by the student."
+        },
+        "studentEmail": {
+          "type": "string",
+          "description": "Email address entered by the student."
+        },
+        "answers": {
+          "type": "object",
+          "description": "Map from questionId to the student's answer string."
+        },
+        "score": {
+          "type": "integer",
+          "description": "Auto-calculated count of correct scorable multiple-choice answers."
+        },
+        "totalScorable": {
+          "type": "integer",
+          "description": "Total number of questions in the game that have a designated correct option."
+        },
+        "completed": {
+          "type": "boolean",
+          "description": "Whether the student completed and submitted the quiz."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp()) when first submitted."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp (FieldValue.serverTimestamp()) when last updated."
+        }
+      },
+      "required": [
+        "gameId",
+        "teacherId",
+        "studentUid",
+        "studentName",
+        "studentEmail",
+        "answers",
+        "score",
+        "totalScorable",
+        "completed",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/games/{gameId}": {
+      "schema": {
+        "$ref": "#/entities/QuizGame"
+      },
+      "description": "Teacher-owned quiz games indexed by join code."
+    },
+    "/games/{gameId}/questions/{questionId}": {
+      "schema": {
+        "$ref": "#/entities/QuizQuestion"
+      },
+      "description": "Ordered questions belonging to a quiz game."
+    },
+    "/games/{gameId}/submissions/{studentUid}": {
+      "schema": {
+        "$ref": "#/entities/StudentSubmission"
+      },
+      "description": "Student submissions (name, email, and answers) delivered directly to the teacher."
+    }
+  }
+}
